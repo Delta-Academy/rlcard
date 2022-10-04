@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import List
 
 import numpy as np
 from copy import deepcopy
@@ -31,9 +32,6 @@ class NolimitholdemGame(Game):
         self.small_blind = 1
         self.big_blind = 2 * self.small_blind
 
-        # config players
-        self.init_chips = [100] * num_players
-
         # If None, the dealer will be randomly chosen
         self.dealer_id = None
 
@@ -42,10 +40,12 @@ class NolimitholdemGame(Game):
         Specify some game specific parameters, such as number of players, initial chips, and dealer id.
         If dealer_id is None, he will be randomly chosen
         """
-        self.num_players = game_config['game_num_players']
-        # must have num_players length
-        self.init_chips = [game_config['chips_for_each']] * game_config["game_num_players"]
-        self.dealer_id = game_config['dealer_id']
+        self.num_players = game_config["game_num_players"]
+
+        assert len(game_config["player_chips"]) == self.num_players
+        self.player_chips = game_config["player_chips"]
+
+        self.dealer_id = game_config["dealer_id"]
 
     def init_game(self):
         """
@@ -65,8 +65,10 @@ class NolimitholdemGame(Game):
         # Initialize a dealer that can deal cards
         self.dealer = Dealer(self.np_random)
 
-        # Initialize players to play the game
-        self.players = [Player(i, self.init_chips[i], self.np_random) for i in range(self.num_players)]
+        self.players = [
+            Player(i, self.player_chips[i], self.np_random)
+            for i in range(self.num_players)
+        ]
 
         # Initialize a judger class which will decide who wins in the end
         self.judger = Judger(self.np_random)
@@ -90,9 +92,16 @@ class NolimitholdemGame(Game):
 
         # Initialize a bidding round, in the first round, the big blind and the small blind needs to
         # be passed to the round for processing.
-        self.round = Round(self.num_players, self.big_blind, dealer=self.dealer, np_random=self.np_random)
+        self.round = Round(
+            self.num_players,
+            self.big_blind,
+            dealer=self.dealer,
+            np_random=self.np_random,
+        )
 
-        self.round.start_new_round(game_pointer=self.game_pointer, raised=[p.in_chips for p in self.players])
+        self.round.start_new_round(
+            game_pointer=self.game_pointer, raised=[p.in_chips for p in self.players]
+        )
 
         # Count the round. There are 4 rounds in each game.
         self.round_counter = 0
@@ -130,7 +139,7 @@ class NolimitholdemGame(Game):
         if action not in self.get_legal_actions():
             print(action, self.get_legal_actions())
             print(self.get_state(self.game_pointer))
-            raise Exception('Action not allowed')
+            raise Exception("Action not allowed")
 
         if self.allow_step_back:
             # First snapshot the current state
@@ -145,7 +154,10 @@ class NolimitholdemGame(Game):
         # Then we proceed to the next round
         self.game_pointer = self.round.proceed_round(self.players, action)
 
-        players_in_bypass = [1 if player.status in (PlayerStatus.FOLDED, PlayerStatus.ALLIN) else 0 for player in self.players]
+        players_in_bypass = [
+            1 if player.status in (PlayerStatus.FOLDED, PlayerStatus.ALLIN) else 0
+            for player in self.players
+        ]
         if self.num_players - sum(players_in_bypass) == 1:
             last_player = players_in_bypass.index(0)
             if self.round.raised[last_player] >= max(self.round.raised):
@@ -201,11 +213,15 @@ class NolimitholdemGame(Game):
 
         chips = [self.players[i].in_chips for i in range(self.num_players)]
         legal_actions = self.get_legal_actions()
-        state = self.players[player_id].get_state(self.public_cards, chips, legal_actions)
-        state['stakes'] = [self.players[i].remained_chips for i in range(self.num_players)]
-        state['current_player'] = self.game_pointer
-        state['pot'] = self.dealer.pot
-        state['stage'] = self.stage
+        state = self.players[player_id].get_state(
+            self.public_cards, chips, legal_actions
+        )
+        state["stakes"] = [
+            self.players[i].remained_chips for i in range(self.num_players)
+        ]
+        state["current_player"] = self.game_pointer
+        state["pot"] = self.dealer.pot
+        state["stage"] = self.stage
         return state
 
     def step_back(self):
@@ -216,7 +232,14 @@ class NolimitholdemGame(Game):
             (bool): True if the game steps back successfully
         """
         if len(self.history) > 0:
-            self.round, self.game_pointer, self.round_counter, self.dealer, self.public_cards, self.players = self.history.pop()
+            (
+                self.round,
+                self.game_pointer,
+                self.round_counter,
+                self.dealer,
+                self.public_cards,
+                self.players,
+            ) = self.history.pop()
             self.stage = Stage(self.round_counter)
             return True
         return False
@@ -237,7 +260,12 @@ class NolimitholdemGame(Game):
         Returns:
             (list): Each entry corresponds to the payoff of one player
         """
-        hands = [p.hand + self.public_cards if p.status in (PlayerStatus.ALIVE, PlayerStatus.ALLIN) else None for p in self.players]
+        hands = [
+            p.hand + self.public_cards
+            if p.status in (PlayerStatus.ALIVE, PlayerStatus.ALLIN)
+            else None
+            for p in self.players
+        ]
         chips_payoffs = self.judger.judge_game(self.players, hands)
         return chips_payoffs
 
